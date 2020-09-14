@@ -117,17 +117,17 @@
         <DCCReference Include="LibsAux\URLSubs.pas"/>
         <DCCReference Include="LibsAux\PicShow.pas"/>
         <DCCReference Include="LibsAux\PSEffect.pas"/>
-        <DCCReference Include="fAvaliacaoSP.pas">
+        <DCCReference Include="Src\fAvaliacaoSP.pas">
             <Form>fDownloadURL</Form>
         </DCCReference>
-        <DCCReference Include="dmRecursosBase.pas">
+        <DCCReference Include="Src\dmRecursosBase.pas">
             <Form>dmRecsBase</Form>
             <DesignClass>TDataModule</DesignClass>
         </DCCReference>
-        <DCCReference Include="fMensagemDlg.pas">
+        <DCCReference Include="Src\fMensagemDlg.pas">
             <Form>FMsgDlg</Form>
         </DCCReference>
-        <DCCReference Include="fDownloadHist.pas">
+        <DCCReference Include="Src\fDownloadHist.pas">
             <Form>FDownHist</Form>
         </DCCReference>
         <BuildConfiguration Include="Release">

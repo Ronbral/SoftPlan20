@@ -29,10 +29,10 @@ uses
   PicShow in 'LibsAux\PicShow.pas',
   PSEffect in 'LibsAux\PSEffect.pas',
   //PSAP
-  fAvaliacaoSP in 'fAvaliacaoSP.pas' {fDownloadURL},
-  dmRecursosBase in 'dmRecursosBase.pas' {dmRecsBase: TDataModule},
-  fMensagemDlg in 'fMensagemDlg.pas' {FMsgDlg},
-  fDownloadHist in 'fDownloadHist.pas' {FDownHist};
+  fAvaliacaoSP in 'Src\fAvaliacaoSP.pas' {fDownloadURL},
+  dmRecursosBase in 'Src\dmRecursosBase.pas' {dmRecsBase: TDataModule},
+  fMensagemDlg in 'Src\fMensagemDlg.pas' {FMsgDlg},
+  fDownloadHist in 'Src\fDownloadHist.pas' {FDownHist};
 
 {$R *.res}
 
