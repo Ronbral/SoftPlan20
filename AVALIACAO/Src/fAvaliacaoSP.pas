@@ -75,6 +75,7 @@ type
     FStartTick,
     FUpdatedTick: Cardinal;
     FConnection: ThtConnection;
+    FAppClose: Boolean;
     DW_URL: string;
     DW_CANCELAR: Boolean;
     DW_INICIO,
@@ -154,7 +155,7 @@ begin
                   btExecDown.Enabled := false;
                   btCancelar.Enabled := true;
                   btStatus.Enabled := true;
-                  DW_CANCELAR := false;
+                  DW_CANCELAR := false; // <---
                   //--- Task PPL
                   FTask := TTask.Create(
                     procedure
@@ -189,10 +190,6 @@ begin
                                        FDownLoad.SaveToFile(NomeArquivo);
                                      end;
                                 except
-                                  on E: EOperationCancelled do
-                                     begin
-                                       // u.f - Adicionar erro ao Log
-                                     end;
                                   on E: Exception do
                                     begin
                                       SetLength(Msg, 0);
@@ -209,12 +206,15 @@ begin
                              end;
                            end;
                       finally
-                        TThread.Queue(nil, TaskFinished);
-                      end;
+                         TThread.Queue(nil, TaskFinished);
+                      end;
                     end
                   );
-                  DW_INICIO := now;
-                  FTask.Start;
+                  if (Not fDownloadURL.DW_CANCELAR) then
+                     begin
+                       DW_INICIO := now;
+                       FTask.Start;
+                     end;
                   //--- Task
                 end
              else TFMsgDlg.Execute(mg_erro2, 5, 'Ok');
@@ -228,27 +228,30 @@ end;
 procedure TfDownloadURL.TaskFinished;
 begin
   FTask := Nil;
-  DW_FIM := Now;
-  btCancelar.Enabled := false;
-  btStatus.Enabled := false;
-  edURL.Clear;
-  ProgressBarDown.Max := 0;
-  ProgressBarDown.Position := 0;
-  lDuracao.Caption := '';
-  lTaxa.Caption := '';
-  //--- Histórico de Downloads
-  if (DW_URL > '') and dmRecsBase.FDConnectionSQLite.Connected and (RC_APP_ID > 0) then
-     with dmRecsBase.FDQuery do
-        begin
-          SQL.Text := 'insert into LOGDOWNLOAD(CODIGO, URL, DATAINICIO, DATAFIM) '+
-                      'values( (select COALESCE(max(CODIGO),0)+1 from LOGDOWNLOAD), '+ // CODIGO Incremental
-                      QuotedStr(DW_URL)+', '+ // URL
-                      'date('+QuotedStr(FormatDateTime('YYYY-MM-DD HH:MM:SS', DW_INICIO))+'), '+ // SQLite usa AAAA-MM-DD HH: MM: SS
-                      'date('+QuotedStr(FormatDateTime('YYYY-MM-DD HH:MM:SS', DW_FIM))+') )';
-          ExecSQL;
-          Close;
-        end;
-  btExecDown.Enabled := true;
+  if Not FAppClose then // Download Abortado?
+     begin
+       DW_FIM := Now;
+       btCancelar.Enabled := false;
+       btStatus.Enabled := false;
+       edURL.Clear;
+       ProgressBarDown.Max := 0;
+       ProgressBarDown.Position := 0;
+       lDuracao.Caption := '';
+       lTaxa.Caption := '';
+       //--- Histórico de Downloads
+       if (Not fDownloadURL.DW_CANCELAR) and (DW_URL > '') and dmRecsBase.FDConnectionSQLite.Connected and (RC_APP_ID > 0) then
+           with dmRecsBase.FDQuery do
+              begin
+                SQL.Text := 'insert into LOGDOWNLOAD(CODIGO, URL, DATAINICIO, DATAFIM) '+
+                            'values( (select COALESCE(max(CODIGO),0)+1 from LOGDOWNLOAD), '+ // CODIGO Incremental
+                            QuotedStr(DW_URL)+', '+ // URL
+                            'date('+QuotedStr(FormatDateTime('YYYY-MM-DD HH:MM:SS', DW_INICIO))+'), '+ // SQLite usa AAAA-MM-DD HH: MM: SS
+                            'date('+QuotedStr(FormatDateTime('YYYY-MM-DD HH:MM:SS', DW_FIM))+') )';
+                ExecSQL;
+                Close;
+              end;
+       btExecDown.Enabled := true;
+     end;
 end;
 
 procedure TfDownloadURL.btDwHistClick(Sender: TObject);
@@ -270,7 +273,7 @@ var p: Double;
 begin //160 (25/100)
   DW_TAXA := true;
   Sleep(100);
-  if (dw_perc_at < 1) or (dw_perc_mx < 1) then Exit;
+  if (dw_perc_at < 1) or (dw_perc_mx < 1) then Exit;  //Download incipiente
 
   p := (dw_perc_at*100) div dw_perc_mx;
   TFMsgDlg.Execute('Download em Andamento!'+tm_Margem+
@@ -285,25 +288,26 @@ end;
 
 procedure TfDownloadURL.DocData(Sender: TObject);
 
-  function SizeToStr(Size: Int64): String;
-  type
+function SizeToStr(Size: Int64): String;
+type
     TBinaryPrefix = (None, Ki, Mi, Gi, Ti, Pi, Ei, Zi, Yi);
-  const
+const
     CBinaryPrefix: array[TBinaryPrefix] of String = ('', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi', 'Ei', 'Zi', 'Yi');
-  var
+var
     Sized: Int64;
     I: TBinaryPrefix;
-  begin
-    I := None;
-    repeat
-      Sized := Size div 1024;
-      if Sized < 10 then
-        break;
-      Inc(I);
-      Size := Sized;
-    until False;
-    Result := IntToStr(Size) + ' ' + CBinaryPrefix[I];
-  end;
+
+begin
+  I := None;
+  repeat
+    Sized := Size div 1024;
+    if Sized < 10 then
+       break;
+    Inc(I);
+    Size := Sized;
+  until False;
+  Result := IntToStr(Size) + ' ' + CBinaryPrefix[I];
+end;
 
 var
   ReceivedSize: Int64;
@@ -314,55 +318,61 @@ var
   H, M, S: Integer;
 
 begin
-  if DW_CANCELAR then
-     if  Assigned(FTask) then
-         begin
-          try
-             FConnection.Abort;
-             FTask.Cancel;
-             FTask.CheckCanceled;
-           except
+  if Not DW_CANCELAR then
+     begin
+       Now := GetTickCount;
+       ReceivedSize := FConnection.ReceivedSize;
+       ExpectedSize := FConnection.ExpectedSize;
+       if DW_TAXA then
+           begin
+             DW_TAXA := false;
+             DW_PERC_MX := ExpectedSize;
+             DW_PERC_AT := ReceivedSize;
            end;
-           edURL.Enabled := true;
-           btExecDown.Enabled := true;
-           Exit;
-         end;
-  Now := GetTickCount;
-  ReceivedSize := FConnection.ReceivedSize;
-  ExpectedSize := FConnection.ExpectedSize;
-  if DW_TAXA then
-     begin
-       DW_TAXA := false;
-       DW_PERC_MX := ExpectedSize;
-       DW_PERC_AT := ReceivedSize;
-     end;
-  if (FUpdatedTick + 100 < Now) or (ReceivedSize = ExpectedSize) then
-     begin
-       FUpdatedTick := Now;
-       Elapsed := Now - FStartTick;
-       if Elapsed > 0 then
-          begin
-            if ReceivedSize < Int64(Elapsed) * 1000 then
-               Speed := ReceivedSize * 1000 div Elapsed
-            else
-               Speed := ReceivedSize div Elapsed * 1000;
-            lTaxa.Caption := SizeToStr(ReceivedSize) + 'B de ' + SizeToStr(ExpectedSize) + 'B (a ' + SizeToStr(Speed) + 'B/seg)';
+       if (FUpdatedTick + 100 < Now) or (ReceivedSize = ExpectedSize) then
+           begin
+             FUpdatedTick := Now;
+             Elapsed := Now - FStartTick;
+             if Elapsed > 0 then
+                begin
+                  if ReceivedSize < Int64(Elapsed) * 1000 then
+                     Speed := ReceivedSize * 1000 div Elapsed
+                  else
+                     Speed := ReceivedSize div Elapsed * 1000;
+                  lTaxa.Caption := SizeToStr(ReceivedSize) + 'B de ' + SizeToStr(ExpectedSize) + 'B (a ' + SizeToStr(Speed) + 'B/seg)';
 
-            ProgressBarDown.Max := ExpectedSize;
-            ProgressBarDown.Position := ReceivedSize;
+                  ProgressBarDown.Max := ExpectedSize;
+                  ProgressBarDown.Position := ReceivedSize;
 
-            if (ReceivedSize > 0) and (ExpectedSize > 0) then
-               begin
-                 S := Round((ExpectedSize - ReceivedSize) / 1000 * Elapsed / ReceivedSize);
-                 H := S div 3600;
-                 S := S mod 3600;
-                 M := S div 60;
-                 S := S mod 60;
-                 lDuracao.Caption := Format('%2.2d:%2.2d:%2.2d', [H, M, S]);
-                 lDuracao.Update;
-               end;
+                  if (ReceivedSize > 0) and (ExpectedSize > 0) then
+                     begin
+                       S := Round((ExpectedSize - ReceivedSize) / 1000 * Elapsed / ReceivedSize);
+                       H := S div 3600;
+                       S := S mod 3600;
+                       M := S div 60;
+                       S := S mod 60;
+                       lDuracao.Caption := Format('%2.2d:%2.2d:%2.2d', [H, M, S]);
+                       lDuracao.Update;
+                     end;
+                end;
+           end;
+     end
+  else if Assigned(FTask) then
+          begin //--- Cancela
+            FConnection.Abort;
+            if (DW_URL > '') then
+                try
+                  DW_URL := '';
+                  FTask.Cancel;
+                  //FTask.CheckCanceled;
+                finally
+                  edURL.Enabled := true;
+                  btCancelar.Enabled := false;
+                  btStatus.Enabled := false;
+                  edURL.Clear;
+                  btExecDown.Enabled := true;
+                end;
           end;
-     end;
 end;
 
 procedure TfDownloadURL.FormClose(Sender: TObject; var Action: TCloseAction);
@@ -382,27 +392,14 @@ begin
 end;
 
 procedure TfDownloadURL.FormCloseQuery(Sender: TObject; var CanClose: Boolean);
-var tc: Integer;
-
 begin
   if Assigned(FTask) then
      if TFMsgDlg.Execute('Atenção!'+tm_Margem+
                          'Existe um download em andamento, deseja interrompe-lo?', 5, 'Sim, Não') = 2 then //2=Sim
         begin
           DW_CANCELAR := true; //--- Ativa Cancelamento da Task
-          try
-            btCancelar.Enabled := false;
-            btStatus.Enabled := false;
-            btExecDown.Enabled := true;
-            edURL.Clear;
-            tc := 0; // --- Aguardar pendencias da PPL: Limita a espera a max 2min
-            repeat
-              if not FTask.Wait(1000) then
-                CheckSynchronize;
-              inc(tc);
-            until (tc > 120) or (FTask = nil);
-          except
-          end;
+          FAppClose := true;
+          //Sleep(500);
         end
      else CanClose := false;
 end;
@@ -479,6 +476,7 @@ begin
   edURL.Clear;
   DW_URL := '';
   FTask := nil;
+  FAppClose := false;
 end;
 
 function TfDownloadURL.ConnectorsGetAuthorization(Connection: ThtConnection; TryRealm: Boolean): Boolean;

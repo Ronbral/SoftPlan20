@@ -119,8 +119,8 @@ object FMsgDlg: TFMsgDlg
         AlignWithMargins = True
         Left = 8
         Top = 0
-        Width = 310
-        Height = 130
+        Width = 37
+        Height = 18
         Margins.Left = 8
         Margins.Top = 0
         Margins.Right = 16
@@ -135,9 +135,6 @@ object FMsgDlg: TFMsgDlg
         ParentFont = False
         ShowAccelChar = False
         WordWrap = True
-        ExplicitLeft = 0
-        ExplicitWidth = 37
-        ExplicitHeight = 18
       end
       object pnBts: TPanel
         Left = 0
